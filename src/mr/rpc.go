@@ -22,8 +22,37 @@ type ExampleReply struct {
 	Y int
 }
 
-// Add your RPC definitions here.
+// State represents the status of a task.
+type State int
 
+const (
+	Waiting State = iota // Waiting state
+	Finish               // Finish state
+)
+
+type Task struct {
+	TaskType TaskType
+	NReduce  int
+	File     string
+}
+
+type TaskType int
+
+const (
+	Map TaskType = iota
+	Reduce
+	Exit
+)
+
+type GetTaskArgs struct {
+	state State
+}
+
+type GetTaskReply struct {
+	task Task
+}
+
+// Add your RPC definitions here.
 
 // Cook up a unique-ish UNIX-domain socket name
 // in /var/tmp, for the coordinator.
