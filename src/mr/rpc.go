@@ -6,7 +6,10 @@ package mr
 // remember to capitalize all names.
 //
 
-import "os"
+import (
+	"os"
+	"time"
+)
 import "strconv"
 
 //
@@ -22,18 +25,30 @@ type ExampleReply struct {
 	Y int
 }
 
-// State represents the status of a task.
+// State represents the status of a Task.
 type State int
 
 const (
-	Waiting State = iota // Waiting state
-	Finish               // Finish state
+	Waiting State = iota // Waiting State
+	Finish               // Finish State
+)
+
+type TaskState int
+
+const (
+	TaskFinish TaskState = iota
+	TaskWaiting
+	TaskRunning
 )
 
 type Task struct {
-	TaskType TaskType
-	NReduce  int
-	File     string
+	TaskType  TaskType
+	NReduce   int
+	File      string
+	TaskState TaskState
+	TaskID    int
+	startTime time.Time
+	NInput    []string
 }
 
 type TaskType int
@@ -42,14 +57,23 @@ const (
 	Map TaskType = iota
 	Reduce
 	Exit
+	Wait
 )
 
 type GetTaskArgs struct {
-	state State
+	State State
 }
 
 type GetTaskReply struct {
-	task Task
+	Task Task
+}
+
+type ReportTaskArgs struct {
+	Task Task
+}
+
+type ReportTaskReply struct {
+	Msg string
 }
 
 // Add your RPC definitions here.
