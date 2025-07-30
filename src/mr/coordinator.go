@@ -2,6 +2,7 @@ package mr
 
 import (
 	"fmt"
+	"io/ioutil"
 	"log"
 	"sync"
 	"time"
@@ -76,14 +77,59 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 		nMap:            len(files),
 	}
 
-	for i, file := range files {
-		c.pendingTasks = append(c.pendingTasks, Task{
-			TaskID:    i,
-			TaskType:  Map,
-			File:      file,
-			NReduce:   nReduce,
-			TaskState: TaskWaiting,
-		})
+	taskID := 0
+	for _, file := range files {
+		// 检查文件大小
+		fileInfo, err := os.Stat(file)
+		if err != nil {
+			log.Fatalf("cannot stat file %v: %v", file, err)
+		}
+
+		// 如果文件小于10MB，直接作为一个任务
+		if fileInfo.Size() <= 10*1024*1024 {
+			c.pendingTasks = append(c.pendingTasks, Task{
+				TaskID:    taskID,
+				TaskType:  Map,
+				File:      file,
+				NReduce:   nReduce,
+				TaskState: TaskWaiting,
+			})
+			taskID++
+			c.nMap++
+			continue
+		}
+
+		// 大文件拆分为多个子文件
+		content, err := ioutil.ReadFile(file)
+		if err != nil {
+			log.Fatalf("cannot read file %v: %v", file, err)
+		}
+
+		chunkSize := 10 * 1024 * 1024 // 10MB
+		for i := 0; i < len(content); i += chunkSize {
+			end := i + chunkSize
+			if end > len(content) {
+				end = len(content)
+			}
+			chunk := content[i:end]
+
+			// 创建临时子文件
+			chunkFile := fmt.Sprintf("%s.part%d", file, i/chunkSize)
+			if err := ioutil.WriteFile(chunkFile, chunk, 0644); err != nil {
+				log.Fatalf("cannot write chunk file %v: %v", chunkFile, err)
+			}
+
+			// 添加子文件任务
+			c.pendingTasks = append(c.pendingTasks, Task{
+				TaskID:    taskID,
+				TaskType:  Map,
+				File:      chunkFile,
+				NReduce:   nReduce,
+				TaskState: TaskWaiting,
+			})
+			taskID++
+			c.nMap++
+		}
 	}
 
 	// Your code here.
@@ -119,6 +165,8 @@ func (c *Coordinator) ReportTask(args *ReportTaskArgs, reply *ReportTaskReply) e
 	if args.Task.TaskState == TaskFinish {
 		c.completedTasks[args.Task.TaskID] = args.Task
 		delete(c.inProgressTasks, args.Task.TaskID)
+		// 打印处理时间
+		fmt.Printf("task %d finished, time cost: %v\n", args.Task.TaskID, time.Since(task.startTime))
 	} else {
 		c.inProgressTasks[args.Task.TaskID] = task
 	}
@@ -131,13 +179,13 @@ func (c *Coordinator) ReportTask(args *ReportTaskArgs, reply *ReportTaskReply) e
 func (c *Coordinator) checkTimeouts() {
 	for {
 		c.mu.Lock()
-		//for k, v := range c.inProgressTasks {
-		//	if v.TaskState == TaskRunning && time.Since(v.startTime) > 10 {
-		//		v.TaskState = TaskWaiting
-		//		c.pendingTasks = append(c.pendingTasks, v)
-		//		delete(c.inProgressTasks, k)
-		//	}
-		//}
+		for k, v := range c.inProgressTasks {
+			if v.TaskState == TaskRunning && time.Since(v.startTime) > 10*time.Second {
+				v.TaskState = TaskWaiting
+				c.pendingTasks = append(c.pendingTasks, v)
+				delete(c.inProgressTasks, k)
+			}
+		}
 		c.mu.Unlock()
 		time.Sleep(1 * time.Second)
 	}

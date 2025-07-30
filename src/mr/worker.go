@@ -56,13 +56,45 @@ func Worker(mapf func(string, string) []KeyValue,
 			// 执行map函数,返回kva
 			kva := mapf(filename, string(content))
 
-			// kva按照nReduce分桶,保存到mr-<TaskID>-<reduceNum>文件中
+			// 创建临时文件
+			tmpFiles := make([]*os.File, task.NReduce)
+			for reduceNum := 0; reduceNum < task.NReduce; reduceNum++ {
+				tmpFile, err := ioutil.TempFile("", fmt.Sprintf("mr-%d-%d-", task.TaskID, reduceNum))
+				if err != nil {
+					log.Fatalf("cannot create temporary file: %v", err)
+				}
+				tmpFiles[reduceNum] = tmpFile
+			}
+
+			// 写入数据到临时文件
 			for _, kv := range kva {
 				reduceNum := ihash(kv.Key) % task.NReduce
-				oname := fmt.Sprintf("mr-%d-%d", task.TaskID, reduceNum)
-				ofile, _ := os.OpenFile(oname, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-				fmt.Fprintf(ofile, "%v %v\n", kv.Key, kv.Value)
-				ofile.Close()
+				fmt.Fprintf(tmpFiles[reduceNum], "%v %v\n", kv.Key, kv.Value)
+			}
+
+			// 关闭所有临时文件
+			for _, tmpFile := range tmpFiles {
+				tmpFile.Close()
+			}
+
+			for reduceNum, tmpFile := range tmpFiles {
+				tmpName := tmpFile.Name()
+				finalName := fmt.Sprintf("mr-%d-%d", task.TaskID, reduceNum)
+
+				// 复制文件内容
+				tmpContent, err := ioutil.ReadFile(tmpName)
+				if err != nil {
+					log.Fatalf("cannot read temporary file %v: %v", tmpName, err)
+				}
+
+				if err := ioutil.WriteFile(finalName, tmpContent, 0644); err != nil {
+					log.Fatalf("cannot write final file %v: %v", finalName, err)
+				}
+
+				// 删除临时文件
+				if err := os.Remove(tmpName); err != nil {
+					log.Printf("warning: cannot remove temporary file %v: %v", tmpName, err)
+				}
 			}
 
 			// 更新任务状态
