@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strings"
 	"time"
 )
 import "log"
@@ -98,11 +99,63 @@ func Worker(mapf func(string, string) []KeyValue,
 			}
 
 			// 更新任务状态
-			task.TaskState = TaskFinish
+			task.TaskState = TaskMapFinish
 			ReportTask(ReportTaskArgs{Task: task})
 
 		case Reduce:
-			reducef(task.File, task.NInput)
+			// 更新任务状态
+			task.TaskState = TaskRunning
+			ReportTask(ReportTaskArgs{Task: task})
+
+			// 收集所有中间文件内容
+			intermediate := make(map[string][]string)
+			for mapID := 0; mapID < task.NInput; mapID++ {
+				filename := fmt.Sprintf("mr-%d-%d", mapID, task.ReduceID)
+				file, err := os.Open(filename)
+				if err != nil {
+					log.Fatalf("cannot open %v", filename)
+				}
+
+				content, err := ioutil.ReadAll(file)
+				if err != nil {
+					log.Fatalf("cannot read %v", filename)
+				}
+				file.Close()
+
+				// 解析中间文件内容
+				lines := strings.Split(string(content), "\n")
+				for _, line := range lines {
+					if line == "" {
+						continue
+					}
+					parts := strings.Split(line, " ")
+					if len(parts) != 2 {
+						continue
+					}
+					key := parts[0]
+					value := parts[1]
+					intermediate[key] = append(intermediate[key], value)
+				}
+			}
+
+			// 创建输出文件
+			outputFile := fmt.Sprintf("mr-out-%d", task.ReduceID)
+			ofile, err := os.Create(outputFile)
+			if err != nil {
+				log.Fatalf("cannot create %v", outputFile)
+			}
+
+			// 对每个key调用reduce函数
+			for key, values := range intermediate {
+				output := reducef(key, values)
+				fmt.Fprintf(ofile, "%v %v\n", key, output)
+			}
+			ofile.Close()
+
+			// 报告任务完成
+			task.TaskState = TaskFinish
+			ReportTask(ReportTaskArgs{Task: task})
+
 		case Exit:
 			fmt.Println("worker exit")
 			return

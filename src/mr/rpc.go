@@ -39,6 +39,7 @@ const (
 	TaskFinish TaskState = iota
 	TaskWaiting
 	TaskRunning
+	TaskMapFinish
 )
 
 type Task struct {
@@ -48,7 +49,8 @@ type Task struct {
 	TaskState TaskState
 	TaskID    int
 	startTime time.Time
-	NInput    []string
+	NInput    int
+	ReduceID  int
 }
 
 type TaskType int
