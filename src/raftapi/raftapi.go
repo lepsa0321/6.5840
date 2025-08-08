@@ -28,12 +28,11 @@ type Raft interface {
 // snapshots) on the applyCh; at that point you can add fields to
 // ApplyMsg, but set CommandValid to false for these other uses.
 type ApplyMsg struct {
-	CommandValid bool
-	Command      interface{}
-	CommandIndex int
-
-	SnapshotValid bool
-	Snapshot      []byte
-	SnapshotTerm  int
-	SnapshotIndex int
+	CommandValid      bool
+	Command           interface{}
+	CommandIndex      int
+	CommandTerm       int
+	SnapshotValid     bool
+	SnapshotIndex     int
+	StateMachineState []byte
 }
